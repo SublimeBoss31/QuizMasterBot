@@ -1,72 +1,84 @@
 const { Telegraf } = require('telegraf');
 const fs = require('fs');
+const path = require('path');
+const bot = new Telegraf('YOUR_BOT_TOKEN'); // Замените на ваш токен
 
-// Загружаем викторины из JSON
-const quizzes = JSON.parse(fs.readFileSync('quizzes.json', 'utf-8'));
+// Загружаем вопросы из файла
+const questionsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'questions.json')));
 
-// Создаем бот
-const bot = new Telegraf('YOUR_BOT_TOKEN_HERE');
+// Функция для начала викторины
+async function startQuiz(ctx) {
+  // Запрашиваем тему викторины
+  ctx.reply('Выберите тему викторины:\n1. Литература\n2. Наука');
 
-// Команда /start
-bot.start((ctx) => {
-  ctx.reply('Привет! Я QuizMasterBot. Выбери тему викторины:', {
-    reply_markup: {
-      inline_keyboard: Object.keys(quizzes).map((theme) => [
-        { text: theme, callback_data: `theme:${theme}` }
-      ])
+  // Слушаем выбор темы
+  bot.on('text', (ctx) => {
+    const message = ctx.message.text.toLowerCase();
+
+    if (message === '1' || message === 'литература') {
+      askQuestions(ctx, 'literature');
+    } else if (message === '2' || message === 'наука') {
+      askQuestions(ctx, 'science');
+    } else {
+      ctx.reply('Неизвестная тема. Пожалуйста, выберите 1 для Литературы или 2 для Науки.');
     }
   });
-});
-
-// Обработка выбора темы
-bot.on('callback_query', (ctx) => {
-  const [type, theme] = ctx.callbackQuery.data.split(':');
-  if (type === 'theme' && quizzes[theme]) {
-    ctx.session = { theme, questionIndex: 0, score: 0 }; // Инициализируем сессию
-    return sendQuestion(ctx);
-  }
-  ctx.answerCbQuery('Неверный выбор!');
-});
-
-// Отправка вопроса
-function sendQuestion(ctx) {
-  const session = ctx.session;
-  const quiz = quizzes[session.theme];
-  if (session.questionIndex < quiz.length) {
-    const question = quiz[session.questionIndex];
-    return ctx.reply(question.question, {
-      reply_markup: {
-        inline_keyboard: question.options.map((opt, idx) => [
-          { text: opt, callback_data: `answer:${idx}` }
-        ])
-      }
-    });
-  }
-  // Завершение викторины
-  ctx.reply(`Викторина завершена! Ты набрал ${session.score} очков.`);
 }
 
-// Обработка ответа
-bot.on('callback_query', (ctx) => {
-  const [type, answer] = ctx.callbackQuery.data.split(':');
-  if (type === 'answer') {
-    const session = ctx.session;
-    const quiz = quizzes[session.theme];
-    const question = quiz[session.questionIndex];
-    if (parseInt(answer) === question.answer) {
-      session.score++;
-      ctx.answerCbQuery('Верно!');
-    } else {
-      ctx.answerCbQuery('Неверно!');
-    }
-    session.questionIndex++;
-    return sendQuestion(ctx);
+// Функция для задавания вопросов
+async function askQuestions(ctx, category) {
+  const questions = questionsData[category];
+
+  if (!questions || questions.length === 0) {
+    ctx.reply('Нет вопросов для выбранной темы.');
+    return;
   }
+
+  let currentQuestionIndex = 0;
+
+  // Функция для отправки следующего вопроса
+  const askNextQuestion = () => {
+    if (currentQuestionIndex < questions.length) {
+      const question = questions[currentQuestionIndex];
+      ctx.reply(question.question);
+
+      // Таймер ожидания ответа
+      setTimeout(() => {
+        if (!question.answered) {
+          ctx.reply(`Время вышло! Вот подсказка: первый символ правильного ответа — '${question.answer.charAt(0)}'`);
+        }
+        currentQuestionIndex++;
+        askNextQuestion(); // Переходим к следующему вопросу
+      }, 30000); // 30 секунд на ответ
+    } else {
+      ctx.reply('Викторина завершена!');
+    }
+  };
+
+  // Начинаем задавать вопросы
+  askNextQuestion();
+
+  // Слушаем ответы пользователей
+  bot.on('text', (ctx) => {
+    if (ctx.message.text.toLowerCase() === questions[currentQuestionIndex].answer.toLowerCase()) {
+      ctx.reply(`Правильный ответ: ${questions[currentQuestionIndex].answer}! Поздравляем!`);
+      questions[currentQuestionIndex].answered = true; // Отметим, что вопрос был отвечен
+      currentQuestionIndex++; // Переходим к следующему вопросу
+      askNextQuestion(); // Переход к следующему вопросу
+    }
+  });
+}
+
+// Обработчик команды /start
+bot.command('start', (ctx) => {
+  ctx.reply('Привет! Напиши !start для начала викторины.');
+  bot.hears('!start', (ctx) => startQuiz(ctx));
 });
 
 // Запуск бота
-bot.launch().then(() => console.log('Бот запущен! 🚀'));
+bot.launch();
 
-// Обработка завершения
-process.once('SIGINT', () => bot.stop('SIGINT'));
-process.once('SIGTERM', () => bot.stop('SIGTERM'));
+// Обработка ошибок
+bot.catch((err) => {
+  console.error('Ошибка бота', err);
+});
