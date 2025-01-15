@@ -44,7 +44,9 @@ bot.on('text', (ctx) => {
       currentQuestion.answered = true;
       currentQuestionIndex++;
       if (currentQuestionIndex < currentQuestions.length) {
-        askNextQuestion(ctx);
+        setTimeout(() => {
+          askNextQuestion(ctx);
+        }, 2000); // Ждем 2 секунды перед следующим вопросом
       } else {
         ctx.reply('Викторина завершена!');
         currentTopic = null; // Завершаем викторину
