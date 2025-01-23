@@ -6,26 +6,47 @@ const bot = new Telegraf('YOUR_BOT_TOKEN'); // Замените на ваш то
 // Загружаем вопросы из файла
 const questionsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'questions.json')));
 
+// Загружаем или создаем файл статистики
+const statsFilePath = path.join(__dirname, 'stats.json');
+let playerScores = {};
+if (fs.existsSync(statsFilePath)) {
+  playerScores = JSON.parse(fs.readFileSync(statsFilePath));
+} else {
+  fs.writeFileSync(statsFilePath, JSON.stringify({}));
+}
+
 // Структура для хранения состояния викторины
 let currentTopic = null;
 let currentQuestions = [];
 let currentQuestionIndex = 0;
 let activeQuestionTimer = null;
-let unansweredQuestionsCount = 0; // Количество вопросов, завершенных без ответа
-const maxUnansweredQuestions = 3; // Порог для завершения викторины
-const playerScores = {}; // Объект для подсчета очков игроков
+let unansweredQuestions = 0; // Счетчик подряд пропущенных вопросов
+const maxUnansweredQuestions = 3; // Лимит на завершение викторины
+let quizActive = false; // Флаг активности викторины
+
+// Функция для сохранения статистики в файл
+function saveStats() {
+  fs.writeFileSync(statsFilePath, JSON.stringify(playerScores, null, 2));
+}
 
 // Функция для начала викторины
 async function startQuiz(ctx) {
-  if (currentTopic === null) {
-    ctx.reply('Выберите тему викторины:\n1. Литература\n2. Наука');
+  if (quizActive) {
+    ctx.reply('Викторина уже идет. Подождите завершения текущей.');
   } else {
-    ctx.reply('Викторина уже началась. Подождите завершения текущей.');
+    quizActive = true;
+    unansweredQuestions = 0;
+    currentTopic = null;
+    currentQuestions = [];
+    currentQuestionIndex = 0;
+    ctx.reply('Выберите тему викторины:\n1. Литература\n2. Наука');
   }
 }
 
 // Слушаем текстовые сообщения
 bot.on('text', (ctx) => {
+  if (!quizActive) return; // Игнорируем сообщения, если викторина не активна
+
   const message = ctx.message.text.toLowerCase();
   const username = ctx.message.from.username || ctx.message.from.first_name;
 
@@ -41,21 +62,28 @@ bot.on('text', (ctx) => {
       ctx.reply('Неизвестная тема. Пожалуйста, выберите 1 для Литературы или 2 для Науки.');
     }
   } else if (currentQuestions.length > 0) {
-    // Проверяем, соответствует ли ответ правильному
+    // Обработка ответа на текущий вопрос
     const currentQuestion = currentQuestions[currentQuestionIndex];
     if (message === currentQuestion.answer.toLowerCase()) {
       clearTimeout(activeQuestionTimer); // Останавливаем таймер
-      unansweredQuestionsCount = 0; // Сбрасываем счетчик пропущенных вопросов
+      unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
+
+      // Подсчет очков за скорость
+      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
+      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
 
       // Обновляем очки игрока
       if (!playerScores[username]) playerScores[username] = 0;
-      playerScores[username] += 1;
+      playerScores[username] += points;
+      saveStats();
 
-      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете 1 очко!`);
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
       currentQuestionIndex++;
       setTimeout(() => {
         askNextQuestion(ctx);
       }, 3000); // 3 секунды задержки перед следующим вопросом
+    } else {
+      ctx.reply(''); // Игнорируем неправильный ответ
     }
   }
 });
@@ -69,7 +97,7 @@ function getRandomQuestions(questions, numQuestions) {
     const randomIndex = Math.floor(Math.random() * questions.length);
     if (!usedIndices.has(randomIndex)) {
       usedIndices.add(randomIndex);
-      selectedQuestions.push(questions[randomIndex]);
+      selectedQuestions.push({ ...questions[randomIndex], remainingTime: 30 });
     }
   }
 
@@ -82,6 +110,7 @@ async function askQuestions(ctx, category) {
 
   if (!questions || questions.length === 0) {
     ctx.reply('Нет вопросов для выбранной темы.');
+    quizActive = false;
     return;
   }
 
@@ -98,11 +127,11 @@ function askNextQuestion(ctx) {
   if (currentQuestionIndex < currentQuestions.length) {
     const question = currentQuestions[currentQuestionIndex];
     const answerLength = question.answer.length;
-    let revealedHint = Array(answerLength).fill('*').join('');
-    const hintInterval = 7; // Интервал между подсказками (в секундах)
-    let remainingTime = 30; // Общее время на ответ
+    let remainingTime = 30; // Общее время на вопрос
 
     ctx.reply(`Вопрос: ${question.question} (букв: ${answerLength})`);
+    let revealedHint = Array(answerLength).fill('*').join('');
+    const hintInterval = 7; // Интервал между подсказками (в секундах)
 
     // Таймер для показа подсказок
     activeQuestionTimer = setInterval(() => {
@@ -113,14 +142,14 @@ function askNextQuestion(ctx) {
         if (nextIndex !== -1) {
           revealedHint = revealedHint.substring(0, nextIndex) + question.answer[nextIndex] + revealedHint.substring(nextIndex + 1);
         }
-        ctx.reply(`Подсказка: ${revealedHint} (времени осталось: ${remainingTime} сек.)`);
+        ctx.reply(`Подсказка: ${revealedHint} (до ответа: ${remainingTime} сек.)`);
       } else {
         clearInterval(activeQuestionTimer); // Останавливаем таймер
         ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
-        unansweredQuestionsCount++;
+        unansweredQuestions++;
         currentQuestionIndex++;
 
-        if (unansweredQuestionsCount >= maxUnansweredQuestions) {
+        if (unansweredQuestions >= maxUnansweredQuestions) {
           ctx.reply('Три подряд неотвеченных вопроса. Викторина завершена!');
           endQuiz(ctx);
         } else {
@@ -139,8 +168,9 @@ function endQuiz(ctx) {
   currentTopic = null;
   currentQuestions = [];
   currentQuestionIndex = 0;
-  unansweredQuestionsCount = 0;
-  clearInterval(activeQuestionTimer);
+  unansweredQuestions = 0;
+  quizActive = false;
+  clearTimeout(activeQuestionTimer);
 }
 
 // Команда /stat для отображения статистики
