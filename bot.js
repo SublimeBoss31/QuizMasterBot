@@ -11,6 +11,9 @@ let currentTopic = null;
 let currentQuestions = [];
 let currentQuestionIndex = 0;
 let activeQuestionTimer = null;
+let unansweredStreak = 0; // Счетчик подряд пропущенных вопросов
+const maxUnansweredStreak = 3; // Лимит неправильных попыток
+const playerScores = {}; // Объект для хранения очков игроков
 
 // Функция для начала викторины
 async function startQuiz(ctx) {
@@ -24,6 +27,7 @@ async function startQuiz(ctx) {
 // Слушаем текстовые сообщения
 bot.on('text', (ctx) => {
   const message = ctx.message.text.toLowerCase();
+  const username = ctx.message.from.username || ctx.message.from.first_name;
 
   // Если тема еще не выбрана
   if (currentTopic === null) {
@@ -41,11 +45,29 @@ bot.on('text', (ctx) => {
     const currentQuestion = currentQuestions[currentQuestionIndex];
     if (message === currentQuestion.answer.toLowerCase()) {
       clearTimeout(activeQuestionTimer); // Останавливаем таймер
-      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Поздравляем!`);
+      unansweredStreak = 0; // Сбрасываем счетчик неправильных попыток
+
+      // Подсчет очков за скорость
+      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
+      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
+
+      // Обновляем очки игрока
+      if (!playerScores[username]) playerScores[username] = 0;
+      playerScores[username] += points;
+
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
       currentQuestionIndex++;
       setTimeout(() => {
         askNextQuestion(ctx);
       }, 3000); // 3 секунды задержки перед следующим вопросом
+    } else {
+      ctx.reply('Неправильный ответ. Попробуйте еще раз!');
+      unansweredStreak++;
+
+      if (unansweredStreak >= maxUnansweredStreak) {
+        ctx.reply('Три подряд неправильных ответа. Викторина завершена!');
+        endQuiz(ctx);
+      }
     }
   }
 });
@@ -59,7 +81,7 @@ function getRandomQuestions(questions, numQuestions) {
     const randomIndex = Math.floor(Math.random() * questions.length);
     if (!usedIndices.has(randomIndex)) {
       usedIndices.add(randomIndex);
-      selectedQuestions.push(questions[randomIndex]);
+      selectedQuestions.push({ ...questions[randomIndex], remainingTime: 30 });
     }
   }
 
@@ -76,46 +98,59 @@ async function askQuestions(ctx, category) {
   }
 
   // Выбираем случайные вопросы
-  currentQuestions = getRandomQuestions(questions, 2);
+  currentQuestions = getRandomQuestions(questions, 5);
 
   // Начинаем задавать вопросы
   currentQuestionIndex = 0;
   askNextQuestion(ctx);
 }
 
-// Функция для отправки следующего вопроса с подсказками и таймером
+// Функция для отправки следующего вопроса с таймером
 function askNextQuestion(ctx) {
   if (currentQuestionIndex < currentQuestions.length) {
     const question = currentQuestions[currentQuestionIndex];
-    const answerLength = question.answer.length;
-    let remainingTime = 30; // Общее время на вопрос
+    ctx.reply(`Вопрос: ${question.question}`);
 
-    ctx.reply(`Вопрос: ${question.question} (букв: ${answerLength})`);
-    let revealedHint = Array(answerLength).fill('*').join('');
-    const hintInterval = 7; // Интервал между подсказками (в секундах)
+    // Таймер для вопроса
+    activeQuestionTimer = setTimeout(() => {
+      ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
+      unansweredStreak++;
+      currentQuestionIndex++;
 
-    // Таймер для показа подсказок
-    activeQuestionTimer = setInterval(() => {
-      remainingTime -= hintInterval;
-      if (remainingTime > 0) {
-        // Открываем следующую букву в подсказке
-        const nextIndex = revealedHint.indexOf('*');
-        if (nextIndex !== -1) {
-          revealedHint = revealedHint.substring(0, nextIndex) + question.answer[nextIndex] + revealedHint.substring(nextIndex + 1);
-        }
-        ctx.reply(`Подсказка: ${revealedHint} (до ответа: ${remainingTime} сек.)`);
+      if (unansweredStreak >= maxUnansweredStreak) {
+        ctx.reply('Три подряд неправильных ответа. Викторина завершена!');
+        endQuiz(ctx);
       } else {
-        clearInterval(activeQuestionTimer); // Останавливаем таймер
-        ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
-        currentQuestionIndex++;
-        askNextQuestion(ctx); // Переходим к следующему вопросу
+        askNextQuestion(ctx);
       }
-    }, hintInterval * 1000);
+    }, 30000); // 30 секунд на ответ
   } else {
     ctx.reply('Викторина завершена!');
-    currentTopic = null; // Сбрасываем тему
+    endQuiz(ctx);
   }
 }
+
+// Завершение викторины
+function endQuiz(ctx) {
+  currentTopic = null;
+  currentQuestions = [];
+  currentQuestionIndex = 0;
+  unansweredStreak = 0;
+  clearTimeout(activeQuestionTimer);
+}
+
+// Команда /stat для отображения статистики
+bot.command('stat', (ctx) => {
+  if (Object.keys(playerScores).length === 0) {
+    ctx.reply('Никто еще не набрал очков.');
+  } else {
+    const stats = Object.entries(playerScores)
+      .sort((a, b) => b[1] - a[1])
+      .map(([username, score], index) => `${index + 1}. ${username}: ${score} очков`)
+      .join('\n');
+    ctx.reply(`Топ игроков:\n${stats}`);
+  }
+});
 
 // Обработчик команды /start
 bot.command('start', (ctx) => {
