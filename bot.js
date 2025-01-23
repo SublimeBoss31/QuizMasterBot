@@ -11,9 +11,8 @@ let currentTopic = null;
 let currentQuestions = [];
 let currentQuestionIndex = 0;
 let activeQuestionTimer = null;
-let unansweredStreak = 0; // Счетчик подряд пропущенных вопросов
-const maxUnansweredStreak = 3; // Лимит неправильных попыток
-const playerScores = {}; // Объект для хранения очков игроков
+let unansweredQuestionsCount = 0; // Количество подряд вопросов, завершившихся без правильного ответа
+const maxUnansweredQuestions = 3; // Лимит пропущенных вопросов подряд
 
 // Функция для начала викторины
 async function startQuiz(ctx) {
@@ -45,29 +44,15 @@ bot.on('text', (ctx) => {
     const currentQuestion = currentQuestions[currentQuestionIndex];
     if (message === currentQuestion.answer.toLowerCase()) {
       clearTimeout(activeQuestionTimer); // Останавливаем таймер
-      unansweredStreak = 0; // Сбрасываем счетчик неправильных попыток
+      unansweredQuestionsCount = 0; // Сбрасываем счетчик пропущенных вопросов
 
-      // Подсчет очков за скорость
-      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
-      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
-
-      // Обновляем очки игрока
-      if (!playerScores[username]) playerScores[username] = 0;
-      playerScores[username] += points;
-
-      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Поздравляем, ${username}!`);
       currentQuestionIndex++;
       setTimeout(() => {
         askNextQuestion(ctx);
       }, 3000); // 3 секунды задержки перед следующим вопросом
     } else {
       ctx.reply('Неправильный ответ. Попробуйте еще раз!');
-      unansweredStreak++;
-
-      if (unansweredStreak >= maxUnansweredStreak) {
-        ctx.reply('Три подряд неправильных ответа. Викторина завершена!');
-        endQuiz(ctx);
-      }
     }
   }
 });
@@ -81,7 +66,7 @@ function getRandomQuestions(questions, numQuestions) {
     const randomIndex = Math.floor(Math.random() * questions.length);
     if (!usedIndices.has(randomIndex)) {
       usedIndices.add(randomIndex);
-      selectedQuestions.push({ ...questions[randomIndex], remainingTime: 30 });
+      selectedQuestions.push(questions[randomIndex]);
     }
   }
 
@@ -114,11 +99,11 @@ function askNextQuestion(ctx) {
     // Таймер для вопроса
     activeQuestionTimer = setTimeout(() => {
       ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
-      unansweredStreak++;
+      unansweredQuestionsCount++; // Увеличиваем счетчик пропущенных вопросов
       currentQuestionIndex++;
 
-      if (unansweredStreak >= maxUnansweredStreak) {
-        ctx.reply('Три подряд неправильных ответа. Викторина завершена!');
+      if (unansweredQuestionsCount >= maxUnansweredQuestions) {
+        ctx.reply('Три подряд вопроса завершились без правильных ответов. Викторина завершена!');
         endQuiz(ctx);
       } else {
         askNextQuestion(ctx);
@@ -135,22 +120,9 @@ function endQuiz(ctx) {
   currentTopic = null;
   currentQuestions = [];
   currentQuestionIndex = 0;
-  unansweredStreak = 0;
+  unansweredQuestionsCount = 0;
   clearTimeout(activeQuestionTimer);
 }
-
-// Команда /stat для отображения статистики
-bot.command('stat', (ctx) => {
-  if (Object.keys(playerScores).length === 0) {
-    ctx.reply('Никто еще не набрал очков.');
-  } else {
-    const stats = Object.entries(playerScores)
-      .sort((a, b) => b[1] - a[1])
-      .map(([username, score], index) => `${index + 1}. ${username}: ${score} очков`)
-      .join('\n');
-    ctx.reply(`Топ игроков:\n${stats}`);
-  }
-});
 
 // Обработчик команды /start
 bot.command('start', (ctx) => {
