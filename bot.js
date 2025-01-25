@@ -212,8 +212,8 @@ bot.on('text', (ctx) => {
     }
   }
 
-  ctx.reply(`Текущая тема для чата ${chatId}:`, state.currentTopic);
-  ctx.reply(`Состояние викторины:`, state);
+  ctx.reply(`Текущая тема для чата ${chatId}: ${state.currentTopic}`);
+  ctx.reply(`Состояние викторины: ${JSON.stringify(state, null, 2)}`);
 });
 
 // Запуск бота
