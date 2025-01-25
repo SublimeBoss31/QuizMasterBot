@@ -52,19 +52,6 @@ async function startQuiz(ctx) {
   ctx.reply('Выберите тему викторины:\n1. Литература\n2. Наука');
 }
 
-
-// Функция для сохранения очков
-function updatePlayerScore(chatId, username, points) {
-  if (!chatStats[chatId]) {
-    chatStats[chatId] = {};
-  }
-  if (!chatStats[chatId][username]) {
-    chatStats[chatId][username] = 0;
-  }
-  chatStats[chatId][username] += points;
-  saveStats();
-}
-
 // Функция для задавания вопросов
 async function askQuestions(ctx, category) {
   const chatId = ctx.chat.id;
@@ -77,37 +64,14 @@ async function askQuestions(ctx, category) {
     return;
   }
 
-  function getRandomQuestions(questions, count) {
-    if (questions.length <= count) {
-      return questions; // Если вопросов меньше или равно count, возвращаем все
-    }
-    
-    const shuffled = questions.sort(() => 0.5 - Math.random()); // Перемешиваем массив
-    return shuffled.slice(0, count); // Возвращаем первые `count` вопросов
-  }
-
-  
-  // Генерация случайных вопросов (если необходимо)
-  state.currentQuestions = getRandomQuestions(questions, 5) || questions;
-
-  if (state.currentQuestions.length === 0) {
-    ctx.reply('Не удалось загрузить вопросы. Проверьте данные.');
-    state.quizActive = false;
-    return;
-  }
-
+  state.currentQuestions = [...questions];
   state.currentTopic = category;
   state.currentQuestionIndex = 0;
 
-  console.log('Вопросы для текущей викторины:', state.currentQuestions);
-
-  // Задаем первый вопрос
   askNextQuestion(ctx);
 }
 
-
-
-// Функция для отправки следующего вопроса с подсказками
+// Функция для отправки следующего вопроса
 function askNextQuestion(ctx) {
   const chatId = ctx.chat.id;
   const state = getQuizState(chatId);
@@ -115,20 +79,15 @@ function askNextQuestion(ctx) {
   if (state.currentQuestionIndex < state.currentQuestions.length) {
     const question = state.currentQuestions[state.currentQuestionIndex];
     const answerLength = question.answer.length;
-    let remainingTime = 30;
 
     ctx.reply(`Вопрос: ${question.question} (букв: ${answerLength})`);
-    let revealedHint = Array(answerLength).fill('*').join('');
-    const hintInterval = 7;
 
+    let remainingTime = 30;
     state.activeQuestionTimer = setInterval(() => {
-      remainingTime -= hintInterval;
+      remainingTime -= 5;
       if (remainingTime > 0) {
-        const nextIndex = revealedHint.indexOf('*');
-        if (nextIndex !== -1) {
-          revealedHint = revealedHint.substring(0, nextIndex) + question.answer[nextIndex] + revealedHint.substring(nextIndex + 1);
-        }
-        ctx.reply(`Подсказка: ${revealedHint} (до ответа: ${remainingTime} сек.)`);
+        const revealed = question.answer.substring(0, 30 - remainingTime);
+        ctx.reply(`Подсказка: ${revealed.padEnd(answerLength, '*')} (осталось ${remainingTime} сек.)`);
       } else {
         clearInterval(state.activeQuestionTimer);
         ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
@@ -142,7 +101,7 @@ function askNextQuestion(ctx) {
           askNextQuestion(ctx);
         }
       }
-    }, hintInterval * 1000);
+    }, 5000);
   } else {
     ctx.reply('Викторина завершена!');
     endQuiz(ctx);
@@ -154,12 +113,8 @@ function endQuiz(ctx) {
   const chatId = ctx.chat.id;
   const state = getQuizState(chatId);
 
-  state.currentTopic = null;
-  state.currentQuestions = [];
-  state.currentQuestionIndex = 0;
-  state.unansweredQuestions = 0;
   state.quizActive = false;
-  clearTimeout(state.activeQuestionTimer);
+  clearInterval(state.activeQuestionTimer);
 }
 
 // Обработчик команды /start
@@ -170,7 +125,7 @@ bot.command('start', (ctx) => {
   if (state.quizActive) {
     ctx.reply('Викторина уже идет. Подождите завершения текущей.');
   } else {
-    startQuiz(ctx); // Запуск викторины
+    startQuiz(ctx);
   }
 });
 
@@ -188,62 +143,39 @@ bot.command('stat', (ctx) => {
   }
 });
 
-// Слушаем текстовые сообщения
+// Обработка текстовых сообщений
 bot.on('text', (ctx) => {
-  const chatId = ctx.chat.id; // Идентификатор текущего чата
-  const state = getQuizState(chatId); // Получаем состояние викторины для чата
+  const chatId = ctx.chat.id;
+  const state = getQuizState(chatId);
 
-  if (!state.quizActive) return; // Игнорируем сообщения, если викторина не активна
+  if (!state.quizActive) return;
 
   const message = ctx.message.text.toLowerCase();
   const username = ctx.message.from.username || ctx.message.from.first_name;
 
-  // Если тема еще не выбрана
   if (state.currentTopic === null) {
-    if (message === '1' || message === 'литература') {
-      state.currentTopic = 'literature';
+    if (message === '1') {
       askQuestions(ctx, 'literature');
-    } else if (message === '2' || message === 'наука') {
-      state.currentTopic = 'science';
+    } else if (message === '2') {
       askQuestions(ctx, 'science');
     } else {
-      ctx.reply('Неизвестная тема. Пожалуйста, выберите 1 для Литературы или 2 для Науки.');
+      ctx.reply('Выберите корректную тему: 1 или 2.');
     }
-  } else if (state.currentQuestions.length > 0) {
-    // Обработка ответа на текущий вопрос
+  } else {
     const currentQuestion = state.currentQuestions[state.currentQuestionIndex];
     if (message === currentQuestion.answer.toLowerCase()) {
-      clearTimeout(state.activeQuestionTimer); // Останавливаем таймер
-      state.unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
-
-      // Подсчет очков за скорость
-      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
-      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
-
-      // Обновляем очки игрока
-      if (!playerScores[chatId]) playerScores[chatId] = {};
-      if (!playerScores[chatId][username]) playerScores[chatId][username] = 0;
-      playerScores[chatId][username] += points;
-      saveStats();
-
-      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
+      clearInterval(state.activeQuestionTimer);
+      state.unansweredQuestions = 0;
+      updatePlayerScore(chatId, username, 1);
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}!`);
       state.currentQuestionIndex++;
-      setTimeout(() => {
-        askNextQuestion(ctx);
-      }, 3000); // 3 секунды задержки перед следующим вопросом
-    } else {
-      ctx.reply(''); // Игнорируем неправильный ответ
+      askNextQuestion(ctx);
     }
   }
-
-  console.log(`Текущая тема для чата ${chatId}: ${state.currentTopic}`);
-  console.log(`Состояние викторины: ${JSON.stringify(state, null, 2)}`);
 });
 
 // Запуск бота
 bot.launch();
 
 // Обработка ошибок
-bot.catch((err) => {
-  console.error('Ошибка бота', err);
-});
+bot.catch((err) => console.error('Ошибка бота:', err));
