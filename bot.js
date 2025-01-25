@@ -77,11 +77,24 @@ async function askQuestions(ctx, category) {
     return;
   }
 
-  state.currentQuestions = getRandomQuestions(questions, 5);
+  // Генерация случайных вопросов (если необходимо)
+  state.currentQuestions = getRandomQuestions(questions, 5) || questions;
+
+  if (state.currentQuestions.length === 0) {
+    ctx.reply('Не удалось загрузить вопросы. Проверьте данные.');
+    state.quizActive = false;
+    return;
+  }
+
   state.currentTopic = category;
   state.currentQuestionIndex = 0;
+
+  console.log('Вопросы для текущей викторины:', state.currentQuestions);
+
+  // Задаем первый вопрос
   askNextQuestion(ctx);
 }
+
 
 // Функция для отправки следующего вопроса с подсказками
 function askNextQuestion(ctx) {
@@ -212,8 +225,8 @@ bot.on('text', (ctx) => {
     }
   }
 
-  ctx.reply(`Текущая тема для чата ${chatId}: ${state.currentTopic}`);
-  ctx.reply(`Состояние викторины: ${JSON.stringify(state, null, 2)}`);
+  console.log(`Текущая тема для чата ${chatId}: ${state.currentTopic}`);
+  console.log(`Состояние викторины: ${JSON.stringify(state, null, 2)}`);
 });
 
 // Запуск бота
