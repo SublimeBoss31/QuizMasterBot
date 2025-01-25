@@ -211,6 +211,9 @@ bot.on('text', (ctx) => {
       ctx.reply(''); // Игнорируем неправильный ответ
     }
   }
+
+  ctx.reply(`Текущая тема для чата ${chatId}:`, state.currentTopic);
+  ctx.reply(`Состояние викторины:`, state);
 });
 
 // Запуск бота
