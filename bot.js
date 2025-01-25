@@ -164,6 +164,54 @@ bot.command('stat', (ctx) => {
   }
 });
 
+// Слушаем текстовые сообщения
+bot.on('text', (ctx) => {
+  const chatId = ctx.chat.id; // Идентификатор текущего чата
+  const state = getQuizState(chatId); // Получаем состояние викторины для чата
+
+  if (!state.quizActive) return; // Игнорируем сообщения, если викторина не активна
+
+  const message = ctx.message.text.toLowerCase();
+  const username = ctx.message.from.username || ctx.message.from.first_name;
+
+  // Если тема еще не выбрана
+  if (state.currentTopic === null) {
+    if (message === '1' || message === 'литература') {
+      state.currentTopic = 'literature';
+      askQuestions(ctx, 'literature');
+    } else if (message === '2' || message === 'наука') {
+      state.currentTopic = 'science';
+      askQuestions(ctx, 'science');
+    } else {
+      ctx.reply('Неизвестная тема. Пожалуйста, выберите 1 для Литературы или 2 для Науки.');
+    }
+  } else if (state.currentQuestions.length > 0) {
+    // Обработка ответа на текущий вопрос
+    const currentQuestion = state.currentQuestions[state.currentQuestionIndex];
+    if (message === currentQuestion.answer.toLowerCase()) {
+      clearTimeout(state.activeQuestionTimer); // Останавливаем таймер
+      state.unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
+
+      // Подсчет очков за скорость
+      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
+      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
+
+      // Обновляем очки игрока
+      if (!playerScores[chatId]) playerScores[chatId] = {};
+      if (!playerScores[chatId][username]) playerScores[chatId][username] = 0;
+      playerScores[chatId][username] += points;
+      saveStats();
+
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
+      state.currentQuestionIndex++;
+      setTimeout(() => {
+        askNextQuestion(ctx);
+      }, 3000); // 3 секунды задержки перед следующим вопросом
+    } else {
+      ctx.reply(''); // Игнорируем неправильный ответ
+    }
+  }
+});
 
 // Запуск бота
 bot.launch();
