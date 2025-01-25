@@ -77,6 +77,16 @@ async function askQuestions(ctx, category) {
     return;
   }
 
+  function getRandomQuestions(questions, count) {
+    if (questions.length <= count) {
+      return questions; // Если вопросов меньше или равно count, возвращаем все
+    }
+    
+    const shuffled = questions.sort(() => 0.5 - Math.random()); // Перемешиваем массив
+    return shuffled.slice(0, count); // Возвращаем первые `count` вопросов
+  }
+
+  
   // Генерация случайных вопросов (если необходимо)
   state.currentQuestions = getRandomQuestions(questions, 5) || questions;
 
@@ -94,6 +104,7 @@ async function askQuestions(ctx, category) {
   // Задаем первый вопрос
   askNextQuestion(ctx);
 }
+
 
 
 // Функция для отправки следующего вопроса с подсказками
