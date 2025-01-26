@@ -3,6 +3,8 @@ const fs = require('fs');
 const path = require('path');
 const bot = new Telegraf('YOUR_BOT_TOKEN'); // Замените на ваш токен
 
+const hintInterval = 10; 
+
 // Загружаем вопросы из файла
 const questionsData = JSON.parse(fs.readFileSync(path.join(__dirname, 'questions.json')));
 
