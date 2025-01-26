@@ -198,20 +198,21 @@ bot.on('text', (ctx) => {
     if (message === currentQuestion.answer.toLowerCase()) {
       clearInterval(state.activeQuestionTimer); // Останавливаем таймер
       state.unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
-
+    
       // Подсчёт очков за скорость
-      const elapsedTime = Math.min(hintCount * hintInterval, maxHints * hintInterval);
+      const elapsedTime = Math.min(state.hintCount * hintInterval, 3 * hintInterval); // Учитываем подсказки из состояния
       const points = elapsedTime <= 10 ? 3 : 1; // Если ответ дан в первые 10 секунд — 3 очка, иначе — 1
-
+    
       // Обновляем очки игрока
       updatePlayerScore(chatId, username, points);
-
+    
       ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} ${points === 1 ? 'очко' : 'очка'}!`);
       state.currentQuestionIndex++;
       setTimeout(() => {
         askNextQuestion(ctx);
       }, 3000); // 3 секунды задержки перед следующим вопросом
     }
+ 
   }
 });
 
