@@ -131,6 +131,18 @@ function endQuiz(ctx) {
   clearInterval(state.activeQuestionTimer);
 }
 
+// Обработчик команды /start
+bot.command('start', (ctx) => {
+  const chatId = ctx.chat.id;
+  const state = getQuizState(chatId);
+
+  if (state.quizActive) {
+    ctx.reply('Викторина уже идет. Подождите завершения текущей.');
+  } else {
+    startQuiz(ctx);
+  }
+});
+
 // Команда /stat для отображения статистики
 bot.command('stat', (ctx) => {
   const chatId = ctx.chat.id;
