@@ -93,15 +93,19 @@ function askNextQuestion(ctx) {
     const question = state.currentQuestions[state.currentQuestionIndex];
     const answer = question.answer;
     let revealedCount = 1; // Сколько букв открыто
-
-    ctx.reply(`Вопрос: ${question.question}`);
+    let hintCount = 0; // Счётчик количества подсказок
+    const maxHints = 3; // Максимум 3 подсказки
     const hintInterval = 10; // Интервал подсказок в секундах
 
+    ctx.reply(`Вопрос: ${question.question}`);
+
+    // Устанавливаем таймер для подсказок
     state.activeQuestionTimer = setInterval(() => {
-      if (revealedCount <= answer.length) {
+      if (hintCount < maxHints) {
         const hint = generateHint(answer, revealedCount);
         ctx.reply(`Подсказка: ${hint}`);
-        revealedCount++;
+        revealedCount++; // Открываем ещё одну букву
+        hintCount++;
       } else {
         clearInterval(state.activeQuestionTimer);
         ctx.reply(`Время вышло! Правильный ответ: ${answer}`);
@@ -169,7 +173,8 @@ function updatePlayerScore(chatId, username, points) {
   saveStats();
 }
 
-// Обработчик текстовых сообщений
+
+// Обработка ответа на текущий вопрос
 bot.on('text', (ctx) => {
   const chatId = ctx.chat.id; // Идентификатор текущего чата
   const state = getQuizState(chatId); // Получаем состояние викторины для чата
@@ -194,11 +199,12 @@ bot.on('text', (ctx) => {
     // Обработка ответа на текущий вопрос
     const currentQuestion = state.currentQuestions[state.currentQuestionIndex];
     if (message === currentQuestion.answer.toLowerCase()) {
-      clearTimeout(state.activeQuestionTimer); // Останавливаем таймер
+      clearInterval(state.activeQuestionTimer); // Останавливаем таймер
       state.unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
 
-      // Подсчет очков за скорость
-      const points = currentQuestion.remainingTime > 20 ? 3 : currentQuestion.remainingTime > 10 ? 2 : 1;
+      // Подсчёт очков за скорость
+      const elapsedTime = Math.min(hintCount * hintInterval, maxHints * hintInterval);
+      const points = elapsedTime <= 10 ? 3 : 1; // Если ответ дан в первые 10 секунд — 3 очка, иначе — 1
 
       // Обновляем очки игрока
       updatePlayerScore(chatId, username, points);
@@ -208,11 +214,10 @@ bot.on('text', (ctx) => {
       setTimeout(() => {
         askNextQuestion(ctx);
       }, 3000); // 3 секунды задержки перед следующим вопросом
-    } else {
-      ctx.reply('Неверный ответ, попробуйте снова!');
     }
   }
 });
+
 
 // Запуск бота
 bot.launch();
