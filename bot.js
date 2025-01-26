@@ -52,6 +52,19 @@ async function startQuiz(ctx) {
   ctx.reply('Выберите тему викторины:\n1. Литература\n2. Наука');
 }
 
+// Функция для формирования подсказки
+function generateHint(answer, revealedCount) {
+  return answer
+    .split(' ')
+    .map(word => {
+      return word
+        .split('')
+        .map((char, index) => (index === 0 || index < revealedCount ? char : '*'))
+        .join('');
+    })
+    .join(' ');
+}
+
 // Функция для задавания вопросов
 async function askQuestions(ctx, category) {
   const chatId = ctx.chat.id;
@@ -78,35 +91,20 @@ function askNextQuestion(ctx) {
 
   if (state.currentQuestionIndex < state.currentQuestions.length) {
     const question = state.currentQuestions[state.currentQuestionIndex];
-    const answerLength = question.answer.length;
-    let remainingTime = 30;
+    const answer = question.answer;
+    let revealedCount = 1; // Сколько букв открыто
 
-    ctx.reply(`Вопрос: ${question.question} (букв: ${answerLength})`);
-    let revealedHint = Array(answerLength).fill('*').join('');
-    const hintInterval = 7; // Интервал подсказок в секундах
-    let hintRevealedCount = 0; // Количество уже открытых букв
-
-    // Сохраняем начальное время в состояние вопроса
-    question.remainingTime = remainingTime;
+    ctx.reply(`Вопрос: ${question.question}`);
+    const hintInterval = 10; // Интервал подсказок в секундах
 
     state.activeQuestionTimer = setInterval(() => {
-      remainingTime -= hintInterval;
-
-      if (remainingTime > 0) {
-        // Открываем по одной букве
-        if (hintRevealedCount < answerLength) {
-          const nextIndex = revealedHint.indexOf('*');
-          if (nextIndex !== -1) {
-            revealedHint = revealedHint.substring(0, nextIndex) + question.answer[nextIndex] + revealedHint.substring(nextIndex + 1);
-            hintRevealedCount++;
-          }
-        }
-
-        ctx.reply(`Подсказка: ${revealedHint} (осталось ${remainingTime} сек.)`);
+      if (revealedCount <= answer.length) {
+        const hint = generateHint(answer, revealedCount);
+        ctx.reply(`Подсказка: ${hint}`);
+        revealedCount++;
       } else {
-        // Время вышло, завершение вопроса
         clearInterval(state.activeQuestionTimer);
-        ctx.reply(`Время вышло! Правильный ответ: ${question.answer}`);
+        ctx.reply(`Время вышло! Правильный ответ: ${answer}`);
         state.unansweredQuestions++;
         state.currentQuestionIndex++;
 
@@ -133,18 +131,6 @@ function endQuiz(ctx) {
   clearInterval(state.activeQuestionTimer);
 }
 
-// Обработчик команды /start
-bot.command('start', (ctx) => {
-  const chatId = ctx.chat.id;
-  const state = getQuizState(chatId);
-
-  if (state.quizActive) {
-    ctx.reply('Викторина уже идет. Подождите завершения текущей.');
-  } else {
-    startQuiz(ctx);
-  }
-});
-
 // Команда /stat для отображения статистики
 bot.command('stat', (ctx) => {
   const chatId = ctx.chat.id;
@@ -159,8 +145,7 @@ bot.command('stat', (ctx) => {
   }
 });
 
-// Исправление ошибки "updatePlayerScore is not defined"
-// Вызов правильной функции обновления статистики в `updatePlayerScore`
+// Функция обновления очков игрока
 function updatePlayerScore(chatId, username, points) {
   if (!chatStats[chatId]) {
     chatStats[chatId] = {};
@@ -172,9 +157,7 @@ function updatePlayerScore(chatId, username, points) {
   saveStats();
 }
 
-
-
-// Исправление обработчика текстовых сообщений
+// Обработчик текстовых сообщений
 bot.on('text', (ctx) => {
   const chatId = ctx.chat.id; // Идентификатор текущего чата
   const state = getQuizState(chatId); // Получаем состояние викторины для чата
@@ -203,13 +186,12 @@ bot.on('text', (ctx) => {
       state.unansweredQuestions = 0; // Сбрасываем счетчик пропущенных вопросов
 
       // Подсчет очков за скорость
-      const responseTime = 30 - currentQuestion.remainingTime; // Время, затраченное на ответ
-      const points = responseTime <= 10 ? 3 : responseTime <= 20 ? 2 : 1;
+      const points = currentQuestion.remainingTime > 20 ? 3 : currentQuestion.remainingTime > 10 ? 2 : 1;
 
       // Обновляем очки игрока
       updatePlayerScore(chatId, username, points);
 
-      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} очков!`);
+      ctx.reply(`Правильный ответ: ${currentQuestion.answer}! Вы получаете ${points} ${points === 1 ? 'очко' : 'очка'}!`);
       state.currentQuestionIndex++;
       setTimeout(() => {
         askNextQuestion(ctx);
