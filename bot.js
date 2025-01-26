@@ -33,6 +33,7 @@ function getQuizState(chatId) {
       unansweredQuestions: 0,
       quizActive: false,
       activeQuestionTimer: null,
+      hintCount: 0, // Новое поле для подсказок
     };
   }
   return quizState[chatId];
@@ -92,20 +93,16 @@ function askNextQuestion(ctx) {
   if (state.currentQuestionIndex < state.currentQuestions.length) {
     const question = state.currentQuestions[state.currentQuestionIndex];
     const answer = question.answer;
-    let revealedCount = 1; // Сколько букв открыто
-    let hintCount = 0; // Счётчик количества подсказок
-    const maxHints = 3; // Максимум 3 подсказки
-    const hintInterval = 10; // Интервал подсказок в секундах
 
+    state.hintCount = 0; // Сбрасываем подсказки для нового вопроса
     ctx.reply(`Вопрос: ${question.question}`);
 
-    // Устанавливаем таймер для подсказок
+    const hintInterval = 10; // Интервал подсказок в секундах
     state.activeQuestionTimer = setInterval(() => {
-      if (hintCount < maxHints) {
-        const hint = generateHint(answer, revealedCount);
+      if (state.hintCount < 3) { // Не больше трёх подсказок
+        const hint = generateHint(answer, state.hintCount + 1); // Открываем на одну букву больше
         ctx.reply(`Подсказка: ${hint}`);
-        revealedCount++; // Открываем ещё одну букву
-        hintCount++;
+        state.hintCount++;
       } else {
         clearInterval(state.activeQuestionTimer);
         ctx.reply(`Время вышло! Правильный ответ: ${answer}`);
